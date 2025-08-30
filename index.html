@@ -25,6 +25,9 @@
             display:block;
             color: rgba(255, 255, 255, 0.5);
             font-size: 14px;
+            -webkit-user-select: none; /* Safari */
+            -ms-user-select: none; /* IE 10 and IE 11 */
+            user-select: none; /* Standard syntax */
         }
     </style>
 </head>
@@ -53,23 +56,31 @@
         const glowingLoops = [];
         let digitalParticles;
         const clock = new THREE.Clock();
+        let isMobile = false;
 
         function init() {
+            // Check if the device is mobile based on screen width
+            isMobile = window.innerWidth < 768;
+
             // Scene setup
             scene = new THREE.Scene();
             scene.fog = new THREE.Fog(0x0a0a14, 20, 60);
 
             // Camera setup
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 25;
+            // Adjust camera distance for mobile view
+            camera.position.z = isMobile ? 55 : 40;
 
             // Renderer setup
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x0a0a14);
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             document.body.appendChild(renderer.domElement);
+
+            // Update info text to be more touch-friendly
+            document.getElementById('info').textContent = 'Drag or swipe to explore the 3D logo';
 
             // Environment Map for holographic reflections
             new RGBELoader()
@@ -96,14 +107,23 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.minDistance = 10;
-            controls.maxDistance = 50;
+            // Adjust zoom constraints for mobile
+            controls.minDistance = isMobile ? 15 : 20;
+            controls.maxDistance = isMobile ? 70 : 80;
             controls.autoRotate = true;
             controls.autoRotateSpeed = 0.5;
 
             // Post-processing for glow effect
             const renderScene = new RenderPass(scene, camera);
-            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.2);
+            // Reduce bloom effect on mobile for better performance
+            const bloomStrength = isMobile ? 0.7 : 0.8;
+            const bloomRadius = isMobile ? 0.35 : 0.4;
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                bloomStrength, 
+                bloomRadius, 
+                0.2
+            );
             composer = new EffectComposer(renderer);
             composer.addPass(renderScene);
             composer.addPass(bloomPass);
@@ -120,9 +140,10 @@
         function loadFont() {
             const loader = new FontLoader();
             loader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+                // Adjust text size for better fit on mobile screens
                 const textOptions = {
                     font: font,
-                    size: 5,
+                    size: isMobile ? 4 : 5,
                     height: 1.5,
                     curveSegments: 12,
                     bevelEnabled: true,
@@ -131,6 +152,9 @@
                     bevelOffset: 0,
                     bevelSegments: 5
                 };
+
+                const logoGroup = new THREE.Group();
+                scene.add(logoGroup);
 
                 // Create "Logic" text with holographic material
                 const logicGeometry = new TextGeometry('Logic', textOptions);
@@ -143,8 +167,9 @@
                     envMapIntensity: 1.0
                 });
                 logicMesh = new THREE.Mesh(logicGeometry, logicMaterial);
-                logicMesh.position.x = -8;
-                scene.add(logicMesh);
+                // Adjust position to bring text closer on mobile
+                logicMesh.position.x = isMobile ? -6.5 : -8;
+                logoGroup.add(logicMesh);
 
                 // Create "Loop" text with glowing gradient material
                 loopGroup = new THREE.Group();
@@ -161,16 +186,13 @@
                     let letterMaterial;
                     const currentLetter = loopText[i];
 
-                    // Check if the letter is 'L' or 'p'
                     if (currentLetter === 'L' || currentLetter === 'p') {
-                        // Set color to black for 'L' and 'p'
                         letterMaterial = new THREE.MeshStandardMaterial({
                             color: 0x000000, // Black
                             metalness: 0.5,
                             roughness: 0.4,
                         });
                     } else {
-                        // Apply the gradient and glow to the other letters ('o', 'o')
                         const t = i / (loopText.length - 1);
                         const letterColor = new THREE.Color().lerpColors(startColor, endColor, t);
                         letterMaterial = new THREE.MeshStandardMaterial({
@@ -196,9 +218,10 @@
                 loopGroup.children.forEach(child => {
                     child.position.x -= loopCenter.x;
                 });
-
-                loopGroup.position.x = 8;
-                scene.add(loopGroup);
+                
+                // Adjust position to bring text closer on mobile
+                loopGroup.position.x = isMobile ? 6.5 : 8;
+                logoGroup.add(loopGroup);
             });
         }
 
@@ -222,7 +245,8 @@
         }
 
         function createDigitalCircuits() {
-            const particleCount = 1000;
+            // Reduce particle count on mobile for performance
+            const particleCount = isMobile ? 500 : 1000;
             const positions = new Float32Array(particleCount * 3);
 
             for (let i = 0; i < particleCount; i++) {
@@ -258,11 +282,14 @@
             requestAnimationFrame(animate);
             const elapsedTime = clock.getElapsedTime();
 
-            if (logicMesh) {
-                logicMesh.position.y = Math.sin(elapsedTime * 0.3) * 0.4;
-            }
-            if (loopGroup) {
-                loopGroup.position.y = Math.cos(elapsedTime * 0.3) * 0.4;
+            // The main logo group will contain both text meshes after the font loads
+            const logoGroup = scene.children.find(c => c.type === 'Group' && c.children.length > 1);
+            if (logoGroup) {
+                 // Animate the individual text elements within the group if they exist
+                const logic = logoGroup.children[0];
+                const loop = logoGroup.children[1];
+                if(logic) logic.position.y = Math.sin(elapsedTime * 0.3) * 0.4;
+                if(loop) loop.position.y = Math.cos(elapsedTime * 0.3) * 0.4;
             }
 
             glowingLoops.forEach((loop, i) => {
@@ -283,4 +310,3 @@
     </script>
 </body>
 </html>
-
